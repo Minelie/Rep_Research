@@ -1,0 +1,179 @@
+---
+title: "Course 5 - Course Project 1: Analysis of Daily Activity Pattern"
+author: "E. Mineo"
+date: "13 août 2018"
+output: 
+  html_document: 
+    keep_md: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning=FALSE)
+```
+
+
+```{r setwd, echo=FALSE}
+setwd("D:/Data Science Coursera/Course5/Assignment-wk2/data")
+```
+
+```{r}
+data <- read.csv("./activity.csv")
+```
+
+Let's first check the data and change the format of some variables.
+```{r}
+str(data)
+```
+
+Let's change the format of steps into a numeric and data into a date format.
+
+```{r}
+library(lubridate)
+data$date <- ymd(data$date)
+data$steps <- as.numeric(data$steps)
+str(data)
+```
+
+##1) What is the mean total number of steps taken per day?
+To answer this question, the data is grouped by date and summarized using the sum, mean and median, omitting the NA values.
+```{r}
+library(dplyr)
+
+sum_steps <- summarize(
+  group_by(data,date),
+  Total_steps=sum(steps,na.rm=T),
+  Mean=mean(steps,na.omit=T),
+  Median=median(steps,na.omit=T)
+)
+
+head(sum_steps)
+```
+
+Then, the summarized data is visualized in a barplot.
+```{r}
+barplot(height=sum_steps$Total_steps,names.arg = sum_steps$date, ylab="Number of Steps" ,main="Total Number of Steps Taken Each Day in October and November 2012")
+```
+
+
+##2) What is the average daily activity pattern?
+Here, the data is summarized by 5-min intervals.
+
+```{r}
+pattern <- summarize(
+  group_by(data,interval),
+  Average=mean(steps,na.rm=TRUE)
+  )
+
+head(pattern)
+```
+
+Then, string characters ":" are added to the time intervals to reformat them into real time data "HH:MM" in a new column named "interval2". This step is not mandatory in the analysis but I think it gives the plot more readability.
+
+```{r}
+pattern$interval2 <- pattern$interval
+pattern[1:2,3] <- sapply(pattern[1:2,3],function(x) paste0("00:0",x),simplify=TRUE)
+pattern[3:12,3] <- sapply(pattern[3:12,3],function(x) paste0("00:",x),simplify=TRUE)
+pattern[13:288,3] <- sapply(pattern[13:288,3],function(x) sub("(..)$", ":\\1",x),simplify=TRUE)
+pattern$interval3 <- as.POSIXct(strptime(pattern$interval2, format="%H:%M"))
+head(pattern)
+```
+
+The POSIXct format adds the date of today to the time, but this will be discarded in the plot. Finally, the pattern is plotted.
+```{r}
+library(ggplot2)
+library(scales)
+
+ggplot(data=pattern,geom="line",aes(x=interval3,y=Average))+
+       geom_line()+
+      labs(title="Average Daily Activity Pattern",x="Time of the Day",y="Average Number of Steps")+
+  scale_x_datetime(date_labels = "%H:%M")
+
+```
+
+5-minute interval with maximum number of step:
+```{r max}
+max <- pattern[which.max(pattern$Average),]$interval
+```
+The 5-minute interval that contains the maximum number of step on average is: **`r max`**.
+
+
+##3) Total number of missing values
+Total number of missing values:
+```{r}
+n_miss <- sum(is.na(data$steps))
+```
+The total number of mssing values is: **`r n_miss`**.
+
+##Impute missing data
+Given the number of 0 for each intervals accross all days, the median gives a less representative average number of steps per interval than the mean. For this reason, NA's were replaced with the mean of all other days at each time interval. A new dataset containing no missing value and named "complete_data" is created.
+```{r}
+complete <- data[complete.cases(data$steps),]
+missing <- data[!complete.cases(data$steps),]
+
+period <- unique(data$interval)
+
+for (i in period) {
+  missing[missing$interval==i,1] <- mean(complete[complete$interval==i,1])
+}
+complete_data <- rbind(complete,missing)
+
+head(complete_data)
+```
+
+
+##Total number of steps per day
+After filling in the NA values, the total number of steps per date is plotted again.
+```{r}
+sum_complete <- summarize(
+  group_by(complete_data,date),
+  Total_steps=sum(steps),
+  Mean=mean(steps),
+  Median=median(steps)
+)
+head(sum_complete)
+```
+
+
+```{r}
+
+barplot(height=sum_complete$Total_steps,names.arg = sum_complete$date, ylab="Number of Steps" ,main="Total Number of Steps Taken Each Day in October and November 2012 /(no missing value)")
+
+```
+
+Compared with the first barplot of the total number of steps per day, this plot includes the data of more days. In fact, the first plot showed some gaps in the timeline. However, given that missing values were found in entire days (i.e. on each day there were either only missing values or no missing values) and that those days were removed in the calculation of the mean, the missing data did not impact the mean and median in each day.
+
+##4) Differences between weekdays and weekend patterns
+To compare weekdays and weekend patterns, weekdays and weekends are distinguished in a new column named "weekday".
+```{r}
+complete_data$weekday <- ifelse ((weekdays(complete_data$date) == "samedi" | weekdays(complete_data$date) == "dimanche"),"weekend","weekday")
+```
+
+Then, the data is grouped by interval and weekday.
+```{r}
+pattern_wkd <- summarize(
+  group_by(complete_data,interval,weekday),
+  Average=mean(steps)
+  )
+head(pattern_wkd)
+```
+
+Just as earlier, the intervals are reformatted into time data and stored in a new column "interval3", for a better readability of the plot.
+```{r}
+pattern_wkd$interval2 <- pattern_wkd$interval
+pattern_wkd[1:4,4] <- sapply(pattern_wkd[1:4,4],function(x) paste0("00:0",x),simplify=TRUE)
+pattern_wkd[5:24,4] <- sapply(pattern_wkd[5:24,4],function(x) paste0("00:",x),simplify=TRUE)
+pattern_wkd[25:nrow(pattern_wkd),4] <- sapply(pattern_wkd[25:nrow(pattern_wkd),4],function(x) sub("(..)$", ":\\1",x),simplify=TRUE)
+
+pattern_wkd$interval3 <- as.POSIXct(strptime(pattern_wkd$interval2, format="%H:%M"))
+head(pattern_wkd)
+```
+
+Weekday and weekend patterns are shown in the plot below.
+```{r}
+ggplot(data=pattern_wkd,geom="line",aes(x=interval3,y=Average))+
+      geom_line()+
+      labs(title="Average Daily Activity Pattern",x="Time of the Day",y="Average Number of Steps")+
+      scale_x_datetime(date_labels = "%H:%M")+
+      facet_grid(weekday ~ .)
+```
+
